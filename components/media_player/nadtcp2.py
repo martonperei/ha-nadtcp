@@ -12,13 +12,17 @@ from homeassistant.components.media_player import (
     SUPPORT_VOLUME_STEP, SUPPORT_SELECT_SOURCE, MediaPlayerDevice,
     PLATFORM_SCHEMA)
 from homeassistant.const import (
-    CONF_NAME, STATE_OFF, STATE_ON, EVENT_HOMEASSISTANT_STOP)
+    CONF_NAME, STATE_OFF, STATE_ON, STATE_UNKNOWN, STATE_UNAVAILABLE, EVENT_HOMEASSISTANT_STOP)
 from homeassistant.core import CoreState, callback
 import homeassistant.helpers.config_validation as cv
-import async_timeout
+from homeassistant.helpers.dispatcher import (
+    async_dispatcher_connect, dispatcher_send)
+
 import asyncio
 
-REQUIREMENTS = ['nadtcp']
+REQUIREMENTS = ['nadtcp==0.1.1']
+
+SIGNAL_NAD_STATE_RECEIVED = 'nad_state_received'
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,8 +52,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
 })
 
 
-@asyncio.coroutine
-def async_setup_platform(hass, config, async_add_devices, discovery_info=None):
+async def async_setup_platform(hass, config, async_add_devices, discovery_info=None):
     """Setup the NAD platform."""
     from nadtcp import NADC338Protocol
 
@@ -79,46 +82,29 @@ class NADDevice(MediaPlayerDevice):
         self._min_vol = min_volume
         self._max_vol = max_volume
         self._volume_step = volume_step
-        self._power = None
+
+        self._state = STATE_UNKNOWN
         self._muted = None
         self._volume = None
         self._source = None
 
-    def nad_vol_to_internal_vol(self, nad_volume):
+    def nad_vol_to_internal_vol(self, nad_vol):
         """Convert the configured volume range to internal volume range.
         Takes into account configured min and max volume.
         """
-        if nad_volume is None:
+        if nad_vol is None:
             volume_internal = 0.0
-        elif nad_volume < self._min_vol:
+        elif nad_vol < self._min_vol:
             volume_internal = 0.0
-        elif nad_volume > self._max_vol:
+        elif nad_vol > self._max_vol:
             volume_internal = 1.0
         else:
-            volume_internal = (nad_volume - self._min_vol) / \
+            volume_internal = (nad_vol - self._min_vol) / \
                               (self._max_vol - self._min_vol)
         return volume_internal
 
-    def set_protocol(self, protocol):
-        """Sets the associated NAD protocol for the device"""
-        self._protocol = protocol
-
-    def is_connected(self):
-        """Return whether the protocol is connected"""
-        return self._protocol is not None
-
-    def message_received(self, key, value):
-        """Handle the received messages"""
-        if key == 'Main.Volume':
-            self._volume = value
-        elif key == 'Main.Power':
-            self._power = value
-        elif key == 'Main.Mute':
-            self._muted = value
-        elif key == 'Main.Source':
-            self._source = value
-
-        self.hass.async_run_job(self.async_update_ha_state())
+    def internal_vol_to_nad_vol(self, internal_vol):
+        return int(round(internal_vol * (self._max_vol - self._min_vol) + self._min_vol))
 
     @property
     def should_poll(self):
@@ -133,10 +119,7 @@ class NADDevice(MediaPlayerDevice):
     @property
     def state(self):
         """Return the state of the device."""
-        if self.is_connected():
-            return STATE_ON if self._power == self._protocol.MSG_ON else STATE_OFF
-        else:
-            return STATE_OFF
+        return self._state
 
     @property
     def source(self):
@@ -146,125 +129,113 @@ class NADDevice(MediaPlayerDevice):
     @property
     def source_list(self):
         """List of available input sources."""
-        if self.is_connected():
-            return self._protocol.get_available_sources()
-        else:
-            return []
+        return self._protocol_class.AVAILABLE_SOURCES
 
     @property
     def volume_level(self):
         """Volume level of the media player (0..1)."""
-        return self.nad_vol_to_internal_vol(self._volume)
+        return self._volume
 
     @property
     def is_volume_muted(self):
         """Boolean if volume is currently muted."""
-        if self.is_connected():
-            return self._muted == self._protocol.MSG_ON
-        else:
-            return False
+        return self._muted
 
     @property
     def supported_features(self):
         """Flag media player features that are supported."""
         return SUPPORT_NAD
 
-    @asyncio.coroutine
-    def async_turn_off(self):
+    async def async_turn_off(self):
         """Turn the media player off."""
-        if self.is_connected():
-            self._protocol.set_value(self._protocol.MSG_POWER, self._protocol.MSG_OFF)
+        if self._protocol:
+            self._protocol.power_off()
 
-    @asyncio.coroutine
-    def async_turn_on(self):
+    async def async_turn_on(self):
         """Turn the media player on."""
-        if self.is_connected():
-            self._protocol.set_value(self._protocol.MSG_POWER, self._protocol.MSG_ON)
+        if self._protocol:
+            self._protocol.power_on()
 
-    @asyncio.coroutine
-    def async_volume_up(self):
+    async def async_volume_up(self):
         """Step volume up in the configured increments."""
-        if self.is_connected():
-            self._protocol.cycle_up(self._protocol.MSG_VOLUME)
+        if self._protocol:
+            self._protocol.volume_up()
 
-    @asyncio.coroutine
-    def async_volume_down(self):
+    async def async_volume_down(self):
         """Step volume down in the configured increments."""
-        if self.is_connected():
-            self._protocol.cycle_down(self._protocol.MSG_VOLUME)
+        if self._protocol:
+            self._protocol.volume_down()
 
-    @asyncio.coroutine
-    def async_set_volume_level(self, volume):
+    async def async_set_volume_level(self, volume):
         """Set volume level, range 0..1."""
-        if self.is_connected():
-            nad_volume_to_set = \
-                int(round(volume * (self._max_vol - self._min_vol) +
-                          self._min_vol))
-            self._protocol.set_value(self._protocol.MSG_VOLUME, nad_volume_to_set)
+        if self._protocol:
+            self._protocol.set_volume(self.internal_vol_to_nad_vol(volume))
 
-    @asyncio.coroutine
-    def async_mute_volume(self, mute):
+    async def async_mute_volume(self, mute):
         """Mute (true) or unmute (false) media player."""
-        if self.is_connected():
+        if self._protocol:
             if mute:
-                self._protocol.set_value(self._protocol.MSG_MUTE, self._protocol.MSG_ON)
+                self._protocol.mute()
             else:
-                self._protocol.set_value(self._protocol.MSG_MUTE, self._protocol.MSG_OFF)
+                self._protocol.unmute()
 
-    @asyncio.coroutine
-    def async_select_source(self, source):
+    async def async_select_source(self, source):
         """Select input source."""
-        if self.is_connected():
-            self._protocol.set_value(self._protocol.MSG_SOURCE, source)
+        if self._protocol:
+            self._protocol.select_source(source)
 
-    @asyncio.coroutine
-    def async_update(self):
-        """Get the latest details from the device."""
-        if self.is_connected():
-            self._protocol.get_value(self._protocol.MSG_MAIN)
+    async def async_added_to_hass(self):
+        import nadtcp
 
-    @asyncio.coroutine
-    def async_added_to_hass(self):
-        def reconnect(exc=None):
-            self.set_protocol(None)
+        def handle_state(state):
+            if nadtcp.CMD_VOLUME in state:
+                self._volume = self.nad_vol_to_internal_vol(state[nadtcp.CMD_VOLUME])
+            if nadtcp.CMD_POWER in state:
+                self._state = STATE_ON if state[nadtcp.CMD_POWER] == nadtcp.MSG_ON else STATE_OFF
+            if nadtcp.CMD_MUTE in state:
+                self._muted = state[nadtcp.CMD_MUTE] == nadtcp.MSG_ON
+            if nadtcp.CMD_SOURCE in state:
+                self._source = state[nadtcp.CMD_SOURCE]
 
+            self.schedule_update_ha_state()
+
+        def state_changed(state):
+            dispatcher_send(self.hass, SIGNAL_NAD_STATE_RECEIVED, state)
+
+        def disconnected(exc=None):
             if self.hass.state != CoreState.stopping:
                 _LOGGER.warning('Disconnected from %s, reconnecting', self._host)
+
+                self._state = STATE_UNAVAILABLE
+                self.schedule_update_ha_state()
                 self.hass.async_add_job(connect)
 
-        @callback
-        def message_received(key, value):
-            _LOGGER.debug('Got event from %s, key %s, value %s', self._host, key, value)
-            self.message_received(key, value)
+        async def connect():
+            _LOGGER.debug('Connecting to %s', self._host)
 
-        @asyncio.coroutine
-        def connect():
-            _LOGGER.info('Initiating connection to %s', self._host)
-
-            connection = self._protocol_class.create_nad_connection(loop=self.hass.loop,
-                                                                    target_ip=self._host,
-                                                                    disconnect_callback=reconnect,
-                                                                    message_received_callback=message_received)
+            connection = self._protocol_class.create_nad_connection(
+                loop=self.hass.loop,
+                target_ip=self._host,
+                disconnect_cb=disconnected,
+                state_changed_cb=state_changed)
 
             try:
-                with async_timeout.timeout(CONNECTION_TIMEOUT,
-                                           loop=self.hass.loop):
-                    transport, protocol = yield from connection
-            except (ConnectionRefusedError,
-                    TimeoutError, OSError, asyncio.TimeoutError) as exc:
+                transport, protocol = await asyncio.wait_for(connection, timeout=CONNECTION_TIMEOUT,
+                                                             loop=self.hass.loop)
+            except (ConnectionRefusedError, OSError, asyncio.TimeoutError) as exc:
                 _LOGGER.exception(
-                    "Error connecting to %s, reconnecting in %s", self._host,
+                    "Error connecting to %s, reconnecting in %ss", self._host,
                     self._reconnect_interval)
-                self.hass.loop.call_later(self._reconnect_interval, reconnect, exc)
+                self.hass.loop.call_later(self._reconnect_interval, disconnected, exc)
                 return
 
-            self.set_protocol(protocol)
-
-            self.hass.async_add_job(self.async_update)
+            self._protocol = protocol
 
             self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP,
                                             lambda x: transport.close())
 
-            return True
+            await self._protocol.state(force_refresh=True)
+
+        async_dispatcher_connect(self.hass, SIGNAL_NAD_STATE_RECEIVED, handle_state)
 
         self.hass.async_add_job(connect)
