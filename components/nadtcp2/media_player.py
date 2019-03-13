@@ -208,6 +208,6 @@ class NADDevice(MediaPlayerDevice):
         async_dispatcher_connect(self.hass, SIGNAL_NAD_STATE_RECEIVED, handle_state_changed)
 
         if self.hass.is_running:
-            await self._client.connect()
+            await connect(None)
         else:
             self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_START, connect)
