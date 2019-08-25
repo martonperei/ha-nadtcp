@@ -1,11 +1,9 @@
-"""
-Support for NAD digital amplifiers which can be remote controlled via tcp/ip.
-
-For more details about this platform, please refer to the documentation at
-https://home-assistant.io/components/nadtcp2.nadtcp/
-"""
+"""Support for NAD digital amplifiers which can be remote controlled via tcp/ip."""
 import logging
+
 import voluptuous as vol
+
+import homeassistant.helpers.config_validation as cv
 from homeassistant.components.media_player import (
     MediaPlayerDevice, PLATFORM_SCHEMA)
 from homeassistant.components.media_player.const import (
@@ -15,25 +13,28 @@ from homeassistant.components.media_player.const import (
 from homeassistant.const import (
     CONF_NAME, STATE_OFF, STATE_ON, STATE_UNKNOWN, STATE_UNAVAILABLE,
     EVENT_HOMEASSISTANT_START, EVENT_HOMEASSISTANT_STOP)
-import homeassistant.helpers.config_validation as cv
+
 from homeassistant.helpers.dispatcher import (
     async_dispatcher_connect, dispatcher_send)
 
-REQUIREMENTS = ['nadtcp==0.2.0.dev2']
+_LOGGER = logging.getLogger(__name__)
 
 SIGNAL_NAD_STATE_RECEIVED = 'nad_state_received'
 
-_LOGGER = logging.getLogger(__name__)
-
 DEFAULT_RECONNECT_INTERVAL = 10
-CONNECTION_TIMEOUT = 10
 DEFAULT_NAME = 'NAD amplifier'
 DEFAULT_MIN_VOLUME = -80
 DEFAULT_MAX_VOLUME = -10
 DEFAULT_VOLUME_STEP = 4
 
-SUPPORT_NAD = SUPPORT_VOLUME_SET | SUPPORT_VOLUME_MUTE | SUPPORT_TURN_ON | \
-              SUPPORT_TURN_OFF | SUPPORT_VOLUME_STEP | SUPPORT_SELECT_SOURCE
+SUPPORT_NAD = (
+    SUPPORT_VOLUME_SET 
+    | SUPPORT_VOLUME_MUTE 
+    | SUPPORT_TURN_ON 
+    | SUPPORT_TURN_OFF 
+    | SUPPORT_VOLUME_STEP 
+    | SUPPORT_SELECT_SOURCE
+)
 
 CONF_MIN_VOLUME = 'min_volume'
 CONF_MAX_VOLUME = 'max_volume'
@@ -202,7 +203,7 @@ class NADDevice(MediaPlayerDevice):
             self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, disconnect)
 
         self._client = NADReceiverTCPC338(self._host, self.hass.loop,
-                                          reconnect_timeout=self._reconnect_interval,
+                                          reconnect_interval=self._reconnect_interval,
                                           state_changed_cb=state_changed_cb)
 
         async_dispatcher_connect(self.hass, SIGNAL_NAD_STATE_RECEIVED, handle_state_changed)
