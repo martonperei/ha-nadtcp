@@ -3,7 +3,7 @@
   "name": "Nadtcp2",
   "documentation": "https://gitlab.com/mindig.marton/ha-nadtcp",
   "requirements": [
-    "nadtcp==0.2.0.dev0"
+    "nadtcp==0.2.0.dev2"
   ],
   "dependencies": [],
   "codeowners": []

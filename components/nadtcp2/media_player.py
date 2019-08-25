@@ -19,7 +19,7 @@ import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.dispatcher import (
     async_dispatcher_connect, dispatcher_send)
 
-REQUIREMENTS = ['nadtcp==0.2.0.dev0']
+REQUIREMENTS = ['nadtcp==0.2.0.dev2']
 
 SIGNAL_NAD_STATE_RECEIVED = 'nad_state_received'
 
@@ -28,7 +28,7 @@ _LOGGER = logging.getLogger(__name__)
 DEFAULT_RECONNECT_INTERVAL = 10
 CONNECTION_TIMEOUT = 10
 DEFAULT_NAME = 'NAD amplifier'
-DEFAULT_MIN_VOLUME = -60
+DEFAULT_MIN_VOLUME = -80
 DEFAULT_MAX_VOLUME = -10
 DEFAULT_VOLUME_STEP = 4
 
