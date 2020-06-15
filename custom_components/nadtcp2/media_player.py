@@ -5,7 +5,7 @@ import voluptuous as vol
 
 import homeassistant.helpers.config_validation as cv
 from homeassistant.components.media_player import (
-    MediaPlayerDevice, PLATFORM_SCHEMA)
+    MediaPlayerEntity, PLATFORM_SCHEMA)
 from homeassistant.components.media_player.const import (
     SUPPORT_VOLUME_SET,
     SUPPORT_VOLUME_MUTE, SUPPORT_TURN_ON, SUPPORT_TURN_OFF,
@@ -52,9 +52,9 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
 })
 
 
-async def async_setup_platform(hass, config, async_add_devices, discovery_info=None):
+async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
     """Setup the NAD platform."""
-    async_add_devices([NADDevice(
+    async_add_entities([NADEntity(
         config.get(CONF_NAME),
         config.get(CONF_HOST),
         config.get(CONF_RECONNECT_INTERVAL),
@@ -66,11 +66,11 @@ async def async_setup_platform(hass, config, async_add_devices, discovery_info=N
     return True
 
 
-class NADDevice(MediaPlayerDevice):
-    """Device handler for the NAD protocol"""
+class NADEntity(MediaPlayerEntity):
+    """Entity handler for the NAD protocol"""
 
     def __init__(self, name, host, reconnect_interval, min_volume, max_volume, volume_step):
-        """Initialize the device properties"""
+        """Initialize the entity properties"""
         self._client = None
         self._name = name
         self._host = host
@@ -109,12 +109,12 @@ class NADDevice(MediaPlayerDevice):
 
     @property
     def name(self):
-        """Return the name of the device."""
+        """Return the name of the entity."""
         return self._name
 
     @property
     def state(self):
-        """Return the state of the device."""
+        """Return the state of the entity."""
         return self._state
 
     @property
