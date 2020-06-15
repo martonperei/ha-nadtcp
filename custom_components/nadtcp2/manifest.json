@@ -1,10 +1,10 @@
 {
   "domain": "nadtcp2",
-  "name": "Nadtcp2",
+  "name": "NAD C338 integration",
   "documentation": "https://github.com/mindigmarton/ha-nadtcp",
   "requirements": [
     "nadtcp==0.2.0.dev2"
   ],
   "dependencies": [],
-  "codeowners": ["mindigmarton"]
+  "codeowners": ["@mindigmarton"]
 }
