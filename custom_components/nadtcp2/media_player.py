@@ -5,7 +5,7 @@ import voluptuous as vol
 
 import homeassistant.helpers.config_validation as cv
 from homeassistant.components.media_player import (
-    MediaPlayerEntity, PLATFORM_SCHEMA)
+    MediaPlayerEntity, PLATFORM_SCHEMA, DEVICE_CLASS_RECEIVER)
 from homeassistant.components.media_player.const import (
     SUPPORT_VOLUME_SET,
     SUPPORT_VOLUME_MUTE, SUPPORT_TURN_ON, SUPPORT_TURN_OFF,
@@ -111,11 +111,21 @@ class NADEntity(MediaPlayerEntity):
     def name(self):
         """Return the name of the entity."""
         return self._name
+    
+    @property
+    def device_class(self):
+        """Return the class of this device."""
+        return DEVICE_CLASS_RECEIVER
 
     @property
     def state(self):
         """Return the state of the entity."""
         return self._state
+    
+    @property
+    def icon(self):
+        """Return the icon for the device."""
+        return "mdi:speaker-multiple"
 
     @property
     def source(self):
@@ -126,6 +136,11 @@ class NADEntity(MediaPlayerEntity):
     def source_list(self):
         """List of available input sources."""
         return self._client.available_sources()
+    
+    @property
+    def available(self):
+        """Return if device is available."""
+        return self._state is not STATE_UNKNOWN
 
     @property
     def volume_level(self):
